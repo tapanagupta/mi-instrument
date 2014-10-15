@@ -97,15 +97,7 @@ class RSNPlatformDriver(PlatformDriver):
         # CIOMSClient instance created by connect() and destroyed by disconnect():
         self._rsn_oms = None
 
-        # TODO(OOIION-1495) review the following. Commented out for the moment.
-        # But yes, we would probably need some concept of currently "active
-        # ports", probably defined as those where there are active instruments
-        #  associated.
-        """
-        # Simple list of active ports in this deployment configuration:
-        # (this should be all the ports that have devices attached. Used in go_active processing
-        self._active_ports = []
-        """
+ 
 
         # URL for the event listener registration/unregistration (based on
         # web server launched by ServiceGatewayService, since that's the
@@ -129,34 +121,6 @@ class RSNPlatformDriver(PlatformDriver):
             log.error("'oms_uri' not present in driver_config = %s", driver_config)
             raise PlatformDriverException(msg="driver_config does not indicate 'oms_uri'")
 
-        # TODO(OOIION-1495) review the following added logic Commented out
-        # for the moment. We need to determine where and how exactly port
-        # information is maintained.
-        """
-        # validate and process ports
-        if not 'ports' in driver_config:
-            log.error("port information not present in driver_config = %s", driver_config)
-            raise PlatformDriverException(msg="driver_config does not indicate 'ports'")
-
-        # Create an IonObjectDeserializer
-        ior = IonObjectRegistry()
-        ion_deserializer = IonObjectDeserializer(obj_registry=ior)
-
-
-        port_info_dict = driver_config['ports']
-        for device_id, platform_port_serialized in port_info_dict.iteritems():
-
-            platform_port = ion_deserializer.deserialize(platform_port_serialized)
-            ooi_rd = OOIReferenceDesignator(platform_port.reference_designator)
-            if ooi_rd.error or not ooi_rd.port:
-                log.error("Invalid port information in driver_config. Reference designator: %s", platform_port.reference_designator)
-            else:
-                #strip leading zeros from port numbers as OMS stores as strings w/o leading zeros
-                port_string = str( int(ooi_rd.port) )
-                self._active_ports.append(port_string)
-
-
-        """
     def _configure(self, driver_config):
         """
         Nothing special done here, only calls super.configure(driver_config)
@@ -165,7 +129,7 @@ class RSNPlatformDriver(PlatformDriver):
         """
         PlatformDriver._configure(self, driver_config)
         self.nodeCfgFile = NodeConfiguration()
-        #self.nodeCfgFile.Open(self._platform_id,self._driver_config['driver_cfg_file']['default_cfg_file'],self._driver_config['driver_cfg_file']['node_cfg_file'])
+        self.nodeCfgFile.Open(self._platform_id,self._driver_config['driver_cfg_file']['default_cfg_file'],self._driver_config['driver_cfg_file']['node_cfg_file'])
 
         self._construct_resource_schema()
         
@@ -174,12 +138,7 @@ class RSNPlatformDriver(PlatformDriver):
         """
         """
         parameters = deepcopy(self._param_dict)
-        ports_dict = self._driver_config.get('ports',{})
-        ports = []
-        # remove until network checkpoint needs are defined.
-        # port info can be retrieve from active deployment
-        #for k,v in ports_dict.iteritems():
-        #    ports.append(v['port_id'])
+
         for k,v in parameters.iteritems():
             read_write = v.get('read_write', None)
             if read_write == 'write':
@@ -188,44 +147,6 @@ class RSNPlatformDriver(PlatformDriver):
                 v['visibility'] = 'READ_ONLY'
 
         commands = {}
-        commands[RSNPlatformDriverEvent.CONNECT_INSTRUMENT] = \
-            {
-                "display_name" : "Connect Instrument",
-                "description" : "Connect an instrument to the platform.",
-                "args" : [],
-                "kwargs" : {
-                    'port_id' : {
-                        "required" : True,
-                        "type" : "int",
-                        "valid_values" : ports
-                        },
-                    'instrument_id' : {
-                        "required" : True,
-                        "type" : "str"
-                        },
-                    'attributes' : {
-                        "required" : True,
-                        "type" : "dict"
-                        }
-                }
-            }
-        commands[RSNPlatformDriverEvent.DISCONNECT_INSTRUMENT] = \
-            {
-                "display_name" : "Disconnect Instrument",
-                "description" : "Disconnect an instrument from the platform.",
-                "args" : [],
-                "kwargs" : {
-                    'port_id' : {
-                        "required" : True,
-                        "type" : "int",
-                        "valid_values" : ports
-                        },
-                    'instrument_id' : {
-                        "required" : True,
-                        "type" : "str"
-                        }
-                }
-            }
         commands[RSNPlatformDriverEvent.TURN_ON_PORT] = \
             {
                 "display_name" : "Port Power On",
@@ -235,7 +156,6 @@ class RSNPlatformDriver(PlatformDriver):
                        'port_id' : {
                             "required" : True,
                             "type" : "int",
-#                            "valid_values" : []
                         }
                 }
 
@@ -249,18 +169,10 @@ class RSNPlatformDriver(PlatformDriver):
                        'port_id' : {
                             "required" : True,
                             "type" : "int",
-                            "valid_values" : ports
                         }
                 }
             }
-        # OOIION-1623 Remove until Check Sync requirements fully defined
-        #commands[RSNPlatformDriverEvent.CHECK_SYNC] = \
-        #    {
-        #        "display_name" : "Check Platform Hierarchy",
-        #        "description" : "Verify the platform hierarchy is consistent with OMS.",
-        #        "args" : [],
-        #        "kwargs" : {}
-        #    }
+ 
         self._resource_schema['parameters'] = parameters
         self._resource_schema['commands'] = commands
 
@@ -325,21 +237,7 @@ class RSNPlatformDriver(PlatformDriver):
         #
         # self.event_subscriber.start()
 
-        # TODO(OOIION-1495) review the following. Commented out for the moment.
-        # Note, per the CI-OMS spec ports need to be turned OFF to then proceed
-        # with connecting instruments. So we need to determine whether we
-        # want to turn all ports ON in this "connect driver" operation,
-        # and then add the logic to turn a port OFF before connecting
-        # instruments, and then ON again; or, just do the OFF/ON logic in the
-        # connect_instrument and disconnect_instrument operations,
-        # but not here.
-        """
-        # power all ports with connected devices
-        if recursion:
-            for port in self._active_ports:
-                log.debug('connect power port: %s', port)
-                self.turn_on_port(port)
-        """
+ 
 
     def _disconnect(self, recursion=None):
         """
@@ -348,17 +246,7 @@ class RSNPlatformDriver(PlatformDriver):
         self._stop_event_dispatch()
         self.event_subscriber.stop()
         self.event_subscriber=None
-        # TODO(OOIION-1495) review the following. Only change is the use
-        # of self._pnode.ports instead of self._active_ports,
-        # while we address the "active ports" concept mentioned above.
-        # Also, it is probably OK to turn off all ports in this "disconnect
-        # driver" operation.fe
-
-        # power off all ports with connected devices
-        if recursion:
-            for port in self._pnode.ports:
-                log.debug('disconnect power port: %s', port)
-                self.turn_off_port(port)
+  
 
         CIOMSClientFactory.destroy_instance(self._rsn_oms)
         self._rsn_oms = None
@@ -383,11 +271,7 @@ class RSNPlatformDriver(PlatformDriver):
         md = retval[self._platform_id]
         return md
 
-    def get_subplatform_ids(self):
-        """
-        Gets the IDs of my sub-platforms.
-        """
-        return self._pnode.subplatforms.keys()
+   
 
     def get_attribute_values(self, attrs):
         """
@@ -607,101 +491,10 @@ class RSNPlatformDriver(PlatformDriver):
         else:
             return dic[port_id]
 
-    def _verify_instrument_id_in_response(self, port_id, instrument_id, dic):
-        """
-        Verifies the presence of instrument_id in the dic.
+    
 
-        @param port_id        Used for error reporting
-        @param instrument_id  The ID to verify
-        @param dic            Dictionary returned by _rsn_oms
-
-        @return dic[instrument_id]
-        """
-        if not instrument_id in dic:
-            msg = "unexpected: dic does not contain entry for %r" % instrument_id
-            log.error(msg)
-            #raise PlatformException(msg=msg)
-
-        return dic[instrument_id]
-
-    def connect_instrument(self, port_id, instrument_id, attributes):
-        if self._rsn_oms is None:
-            raise PlatformConnectionException("Cannot connect_instrument: _rsn_oms object required (created via connect() call)")
-
-        try:
-            response = self._rsn_oms.instr.connect_instrument(self._platform_id,
-                                                              port_id,
-                                                              instrument_id,
-                                                              attributes)
-        except Exception as e:
-            raise PlatformConnectionException(msg="Cannot connect_instrument: %s" % str(e))
-
-        log.debug("%r: connect_instrument response: %s",
-                  self._platform_id, response)
-
-        dic_plat = self._verify_platform_id_in_response(response)
-        port_dic = self._verify_port_id_in_response(port_id, dic_plat)
-        instr_res = self._verify_instrument_id_in_response(port_id, instrument_id, port_dic)
-
-        # update local image if instrument was actually connected in this call:
-        if isinstance(instr_res, dict):
-            attrs = instr_res
-            instrumentNode = InstrumentNode(instrument_id, attrs)
-            # TODO(OOIION-1495) review. This line was commented out, but the
-            # PortNode.add_instrument/remove_instrument functionality is
-            # being used to keep track of the connected instruments in a port.
-            self._pnode.ports[port_id].add_instrument(instrumentNode)
-            log.debug("%r: port_id=%s connect_instrument: local image updated: %s",
-                      self._platform_id, port_id, instrument_id)
-
-        return dic_plat  # note: return the dic for the platform
-
-    def disconnect_instrument(self, port_id, instrument_id):
-        if self._rsn_oms is None:
-            raise PlatformConnectionException("Cannot disconnect_instrument: _rsn_oms object required (created via connect() call)")
-
-        try:
-            response = self._rsn_oms.instr.disconnect_instrument(self._platform_id,
-                                                                 port_id,
-                                                                 instrument_id)
-        except Exception as e:
-            raise PlatformConnectionException(msg="Cannot disconnect_instrument: %s" % str(e))
-
-        log.debug("%r: disconnect_instrument response: %s",
-                  self._platform_id, response)
-
-        dic_plat = self._verify_platform_id_in_response(response)
-        port_dic = self._verify_port_id_in_response(port_id, dic_plat)
-        instr_res = self._verify_instrument_id_in_response(port_id, instrument_id, port_dic)
-
-        # update local image if instrument was actually disconnected in this call:
-        if instr_res == NormalResponse.INSTRUMENT_DISCONNECTED:
-            # TODO(OOIION-1495) review. This line was commented out, but the
-            # PortNode.add_instrument/remove_instrument functionality is
-            # being used to keep track of the connected instruments in a port.
-            self._pnode.ports[port_id].remove_instrument(instrument_id)
-            log.debug("%r: port_id=%s disconnect_instrument: local image updated: %s",
-                      self._platform_id, port_id, instrument_id)
-
-        return dic_plat  # note: return the dic for the platform
-
-    def get_connected_instruments(self, port_id):
-        if self._rsn_oms is None:
-            raise PlatformConnectionException("Cannot get_connected_instruments: _rsn_oms object required (created via connect() call)")
-
-        try:
-            response = self._rsn_oms.instr.get_connected_instruments(self._platform_id,
-                                                                     port_id)
-        except Exception as e:
-            raise PlatformConnectionException(msg="Cannot get_connected_instruments: %s" % str(e))
-
-        log.debug("%r: port_id=%r: get_connected_instruments response: %s",
-                  self._platform_id, port_id, response)
-
-        dic_plat = self._verify_platform_id_in_response(response)
-        port_dic = self._verify_port_id_in_response(port_id, dic_plat)
-
-        return dic_plat  # note: return the dic for the platform
+    
+    
 
     def turn_on_port(self, port_id):
          
@@ -892,67 +685,8 @@ class RSNPlatformDriver(PlatformDriver):
 
         return "OK"
 
-    ##############################################################
-    # sync/checksum
-    ##############################################################
+   
 
-    def get_external_checksum(self):
-        """
-        Returns the checksum of the external platform associated with this
-        driver.
-
-        @return SHA1 hash value as string of hexadecimal digits.
-        """
-        log.debug("%r: get_checksum...", self._platform_id)
-
-        if self._rsn_oms is None:
-            raise PlatformConnectionException("Cannot get_checksum: _rsn_oms object required (created via connect() call)")
-
-        try:
-            response = self._rsn_oms.config.get_checksum(self._platform_id)
-        except Exception as e:
-            raise PlatformConnectionException(msg="Cannot get_checksum: %s" % str(e))
-
-        checksum = self._verify_platform_id_in_response(response)
-        log.debug("%r: get_checksum... checksum=%s" % (self._platform_id, checksum))
-        return checksum
-
-    def _check_sync(self):
-        """
-        This will be the main operation related with checking that the
-        information on this platform agent (and sub-platforms) is consistent
-        with the information in the external network rooted at the
-        corresponding platform, then publishing relevant notification events.
-
-        For the moment, it only reports the value of the external checksum
-        and the value of the local checksum.
-
-        @todo complete implementation
-
-        @return {'external_checksum': string, 'local_checksum': string}
-        """
-        log.debug("%r: _check_sync: getting external checksum...", self._platform_id)
-
-        external_checksum = self.get_external_checksum()
-        local_checksum = self._pnode.compute_checksum()
-
-        if log.isEnabledFor(logging.DEBUG):  # pragma: no cover
-            filename = "logs/checksum_check_from_driver.yml"
-            try:
-                from mi.platform.util.network_util import NetworkUtil
-                open(filename, "w").write(NetworkUtil.serialize_pnode(self._pnode))
-            except Exception as e:
-                log.debug("%r: cannot write %s: %s", self._platform_id, filename, e)
-
-        result = {'external_checksum': external_checksum,
-                  'local_checksum': local_checksum}
-
-        log.debug("%r: _check_sync: result: %s", self._platform_id, result)
-
-        # TODO - if checksums are different, determine what sub-components are
-        # in disagreement; publish relevant event(s), etc.
-
-        return result
 
     ##############################################################
     # GET
@@ -965,18 +699,6 @@ class RSNPlatformDriver(PlatformDriver):
             result = self.get_attribute_values(attrs)
             return result
 
-        if 'subplatform_ids' in kwargs:
-            result = self.get_subplatform_ids()
-            return result
-
-        if 'ports' in kwargs:
-            result = self._get_ports()
-            return result
-
-        if 'connected_instruments' in kwargs:
-            port_id = kwargs['connected_instruments']
-            result = self.get_connected_instruments(port_id)
-            return result
 
         if 'metadata' in kwargs:
             result = self.get_metadata()
@@ -997,27 +719,18 @@ class RSNPlatformDriver(PlatformDriver):
         @return  result of the execution
         """
 
-        if cmd == RSNPlatformDriverEvent.CHECK_SYNC:
-            result = self._check_sync()
 
-        elif cmd == RSNPlatformDriverEvent.TURN_ON_PORT:
+        if cmd == RSNPlatformDriverEvent.TURN_ON_PORT:
             result = self.turn_on_port(*args, **kwargs)
 
         elif cmd == RSNPlatformDriverEvent.TURN_OFF_PORT:
             result = self.turn_off_port(*args, **kwargs)
-
-        elif cmd == RSNPlatformDriverEvent.CONNECT_INSTRUMENT:
-            result = self.connect_instrument(*args, **kwargs)
-
-        elif cmd == RSNPlatformDriverEvent.DISCONNECT_INSTRUMENT:
-            result = self.disconnect_instrument(*args, **kwargs)
-            
+          
         elif cmd == RSNPlatformDriverEvent.START_PROFILER_MISSION:
             result = self.start_profiler_mission(*args, **kwargs)
 
         elif cmd == RSNPlatformDriverEvent.ABORT_PROFILER_MISSION:
             result = self.abort_profiler_mission(*args, **kwargs)
-
 
         else:
             result = super(RSNPlatformDriver, self).execute(cmd, args, kwargs)
@@ -1031,76 +744,6 @@ class RSNPlatformDriver(PlatformDriver):
         log.debug("%r: _get_ports: %s", self._platform_id, ports)
         return ports
 
-        # TODO(OOIION-1495) review the following
-        """
-        ports = {}
-
-        # todo remove until NetworkDefinition is brought in alignment See OOIION-1495.
-        #for port_id, port in self._pnode.ports.iteritems():
-        #    ports[port_id] = {'network': port.network,
-        #                      'state':   port.state}
-
-        if self._rsn_oms is None:
-            raise PlatformConnectionException("Cannot turn_on_platform_port: _rsn_oms object required (created via connect() call)")
-
-        try:
-            response = self._rsn_oms.port.get_platform_ports(self._platform_id)
-            ports = response[self._platform_id]
-
-        except Exception as e:
-            raise PlatformConnectionException(msg="Cannot turn_on_platform_port: %s" % str(e))
-
-        log.debug("%r: _get_ports: %s", self._platform_id, ports)
-        return ports
-        """
-
-    ##############################################################
-    # CONNECTED event handlers we add in this subclass
-    ##############################################################
-
-    def _handler_connected_connect_instrument(self, *args, **kwargs):
-        """
-        """
-        port_id = kwargs.get('port_id', None)
-        if port_id is None:
-            raise InstrumentException('connect_instrument: missing port_id argument')
-
-        instrument_id = kwargs.get('instrument_id', None)
-        if instrument_id is None:
-            raise InstrumentException('connect_instrument: missing instrument_id argument')
-
-        attributes = kwargs.get('attributes', None)
-        if attributes is None:
-            raise InstrumentException('connect_instrument: missing attributes argument')
-
-        try:
-            result = self.connect_instrument(port_id, instrument_id, attributes)
-            return PlatformDriverState.CONNECTED, result
-
-        except PlatformConnectionException as e:
-            return self._connection_lost(RSNPlatformDriverEvent.CONNECT_INSTRUMENT,
-                                         args, kwargs, e)
-
-    def _handler_connected_disconnect_instrument(self, *args, **kwargs):
-        """
-        """
-        port_id = kwargs.get('port_id', None)
-        if port_id is None:
-            raise InstrumentException('disconnect_instrument: missing port_id argument')
-
-        instrument_id = kwargs.get('instrument_id', None)
-        if instrument_id is None:
-            raise InstrumentException('disconnect_instrument: missing instrument_id argument')
-
-        try:
-            result = self.disconnect_instrument(port_id, instrument_id)
-            next_state = None
-
-        except PlatformConnectionException as e:
-            return self._connection_lost(RSNPlatformDriverEvent.DISCONNECT_INSTRUMENT,
-                                         args, kwargs, e)
-
-        return next_state, result
     
     
     def _handler_connected_start_profiler_mission(self, *args, **kwargs):
@@ -1162,17 +805,7 @@ class RSNPlatformDriver(PlatformDriver):
             return self._connection_lost(RSNPlatformDriverEvent.TURN_OFF_PORT,
                                          args, kwargs, e)
 
-    def _handler_connected_check_sync(self, *args, **kwargs):
-        """
-        """
-        try:
-            result = self._check_sync()
-            return None, result
-
-        except PlatformConnectionException as e:
-            return self._connection_lost(RSNPlatformDriverEvent.CHECK_SYNC,
-                                         args, kwargs, e)
-
+    
     ##############################################################
     # RSN Platform driver FSM setup
     ##############################################################
@@ -1188,10 +821,7 @@ class RSNPlatformDriver(PlatformDriver):
                                                       enter_event, exit_event)
 
         # CONNECTED state event handlers we add in this class:
-        self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.CONNECT_INSTRUMENT, self._handler_connected_connect_instrument)
-        self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.DISCONNECT_INSTRUMENT, self._handler_connected_disconnect_instrument)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.TURN_ON_PORT, self._handler_connected_turn_on_port)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.TURN_OFF_PORT, self._handler_connected_turn_off_port)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.START_PROFILER_MISSION, self._handler_connected_start_profiler_mission)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.ABORT_PROFILER_MISSION, self._handler_connected_abort_profiler_mission)
-        self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.CHECK_SYNC, self._handler_connected_check_sync)
