@@ -128,9 +128,17 @@ class RSNPlatformDriver(PlatformDriver):
         @param driver_config with required 'oms_uri' entry.
         """
         PlatformDriver._configure(self, driver_config)
-        self.nodeCfgFile = NodeConfiguration()
-        self.nodeCfgFile.Open(self._platform_id,self._driver_config['driver_cfg_file']['default_cfg_file'],self._driver_config['driver_cfg_file']['node_cfg_file'])
 
+        self.nodeCfgFile = NodeConfiguration()
+ 
+        
+        self._platform_id = driver_config['node_id']
+            
+        
+        self.nodeCfgFile.Open(self._platform_id,driver_config['driver_config_file']['default_cfg_file'],driver_config['driver_config_file']['node_cfg_file'])
+
+        self.nodeCfgFile.Print();
+        
         self._construct_resource_schema()
         
     
