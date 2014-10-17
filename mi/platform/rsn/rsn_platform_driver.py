@@ -35,6 +35,8 @@ from mi.platform.platform_driver_event import OMSEventDriverEvent
 # from pyon.util.containers import get_ion_ts
 
 from mi.platform.util import ion_ts_2_ntp
+import ntplib
+
 
 # from pyon.event.event import EventSubscriber
 
@@ -60,6 +62,7 @@ class RSNPlatformDriverEvent(PlatformDriverEvent):
     """
     CONNECT_INSTRUMENT        = 'RSN_PLATFORM_DRIVER_CONNECT_INSTRUMENT'
     DISCONNECT_INSTRUMENT     = 'RSN_PLATFORM_DRIVER_DISCONNECT_INSTRUMENT'
+    GET_ENG_DATA              = 'RSN_PLATFORM_DRIVER_GET_ENG_DATA'
     TURN_ON_PORT              = 'RSN_PLATFORM_DRIVER_TURN_ON_PORT'
     TURN_OFF_PORT             = 'RSN_PLATFORM_DRIVER_TURN_OFF_PORT'
     START_PROFILER_MISSION    = 'RSN_PLATFORM_DRIVER_START_PROFILER_MISSION'
@@ -70,6 +73,7 @@ class RSNPlatformDriverEvent(PlatformDriverEvent):
 class RSNPlatformDriverCapability(BaseEnum):
     CONNECT_INSTRUMENT        = RSNPlatformDriverEvent.CONNECT_INSTRUMENT
     DISCONNECT_INSTRUMENT     = RSNPlatformDriverEvent.DISCONNECT_INSTRUMENT
+    GET_ENG_DATA              = RSNPlatformDriverEvent.GET_ENG_DATA
     TURN_ON_PORT              = RSNPlatformDriverEvent.TURN_ON_PORT
     TURN_OFF_PORT             = RSNPlatformDriverEvent.TURN_OFF_PORT
     START_PROFILER_MISSION    = RSNPlatformDriverEvent.START_PROFILER_MISSION
@@ -280,6 +284,29 @@ class RSNPlatformDriver(PlatformDriver):
         return md
 
    
+    def get_eng_data(self):
+        
+        log.debug("%r: get_eng_data...", self._platform_id)
+        
+        numSeconds = 5.0
+       
+        ntp_time = ntplib.system_to_ntp_time(time.time())
+        
+        attrs = [('sec_node_port_J5_IP1_output_current',ntp_time-numSeconds)]
+        
+
+        returnDict = self.get_attribute_values(attrs)
+      
+#TODO need error handling                                                
+#        returnList = returnDict[nodeName][attributeName]
+        
+        
+
+        
+        
+        
+        
+        return 1
 
     def get_attribute_values(self, attrs):
         """
@@ -295,7 +322,7 @@ class RSNPlatformDriver(PlatformDriver):
         # format used by the RSN OMS interface:
         
         # also convert the ION parameter names to RSN attribute IDs
-        attrs_ntp = [(self.nodeCfgFile.GetAttrFromParameter(attr_id), ion_ts_2_ntp(from_time))
+        attrs_ntp = [(self.nodeCfgFile.GetAttrFromParameter(attr_id), from_time)
                      for (attr_id, from_time) in attrs]
         
         
@@ -771,6 +798,19 @@ class RSNPlatformDriver(PlatformDriver):
             return self._connection_lost(RSNPlatformDriverEvent.START_PROFILER_MISSION,
                                          args, kwargs, e)
             
+            
+    def _handler_connected_get_eng_data(self, *args, **kwargs):
+        """
+        """
+
+        try:
+            result = self.get_eng_data()
+            return None, result
+
+        except PlatformConnectionException as e:
+            return self._connection_lost(RSNPlatformDriverEvent.GET_ENG_DATA,
+                                         args, kwargs, e)
+            
     def _handler_connected_abort_profiler_mission(self, *args, **kwargs):
         """
         """
@@ -833,3 +873,4 @@ class RSNPlatformDriver(PlatformDriver):
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.TURN_OFF_PORT, self._handler_connected_turn_off_port)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.START_PROFILER_MISSION, self._handler_connected_start_profiler_mission)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.ABORT_PROFILER_MISSION, self._handler_connected_abort_profiler_mission)
+        self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.GET_ENG_DATA, self._handler_connected_get_eng_data)
