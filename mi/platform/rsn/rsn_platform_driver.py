@@ -17,9 +17,12 @@ from copy import deepcopy
 import mi.core.log
 
 log = mi.core.log.get_logger()
-
+from functools import partial
 from mi.core.common import BaseEnum
+from mi.core.scheduler import PolledScheduler
 from mi.platform.platform_driver import PlatformDriver
+from mi.core.instrument.data_particle import DataParticle
+from mi.core.instrument.instrument_driver import DriverAsyncEvent
 from mi.platform.platform_driver import PlatformDriverState
 from mi.platform.platform_driver import PlatformDriverEvent
 from mi.platform.util.network import InstrumentNode
@@ -48,6 +51,35 @@ import ntplib
 # from ion.core.ooiref import OOIReferenceDesignator
 
 from mi.platform.util.node_configuration import NodeConfiguration
+
+
+ 
+ 
+class Platform_Particle(DataParticle):
+    """
+    The contents of the parameter dictionary, published at the start of a scan
+    """
+    def _build_parsed_values(self):
+        
+        
+        
+        
+        return(self.raw_data)
+    
+
+
+
+
+
+
+class ScheduledJob(BaseEnum):
+    """
+    Instrument scheduled jobs
+    """
+    ACQUIRE_SAMPLE = 'pad_sample_timer_event'
+
+
+
 
 class RSNPlatformDriverState(PlatformDriverState):
     """
@@ -110,6 +142,16 @@ class RSNPlatformDriver(PlatformDriver):
         # actually be provided by some component more in charge of the RSN
         # platform netwokr as a whole -- as opposed to platform-specific).
         self.listener_url = None
+        
+               # scheduler config is a bit redundant now, but if we ever want to
+        # re-initialize a scheduler we will need it.
+        self._scheduler = None
+        
+        
+     
+
+        
+        
 
     def _filter_capabilities(self, events):
         """
@@ -144,6 +186,34 @@ class RSNPlatformDriver(PlatformDriver):
         self.nodeCfgFile.Print();
         
         self._construct_resource_schema()
+        
+        
+    def _build_scheduler(self):
+        """
+        Build a scheduler for periodic status updates
+        """
+        self._scheduler = PolledScheduler()
+        self._scheduler.start()
+        
+        def event_callback(self, event):
+            log.info("driver job triggered, raise event: %s" % event)
+            self._fsm.on_event(event)
+
+        # Dynamically create the method and add it
+        method = partial(event_callback, self, RSNPlatformDriverEvent.GET_ENG_DATA)
+        
+        
+        self._job = self._scheduler.add_interval_job(method, seconds=3)
+       
+
+    def _delete_scheduler(self):
+        """
+        Remove the autosample schedule.
+        """
+        try:
+            self._scheduler.remove_scheduler(self._job)
+        except KeyError:
+            log.info('Failed to remove scheduled job for ACQUIRE_SAMPLE')
         
     
     def _construct_resource_schema(self):
@@ -242,6 +312,8 @@ class RSNPlatformDriver(PlatformDriver):
         # start event dispatch:
         self._start_event_dispatch()
         
+        
+        self._build_scheduler()
 
         # TODO - commented out
         # self.event_subscriber = EventSubscriber(event_type='OMSDeviceStatusEvent',
@@ -263,6 +335,10 @@ class RSNPlatformDriver(PlatformDriver):
         CIOMSClientFactory.destroy_instance(self._rsn_oms)
         self._rsn_oms = None
         log.debug("%r: CIOMSClient instance destroyed", self._platform_id)
+        
+        self._delete_scheduler();
+        self._scheduler = None
+        
 
     def get_metadata(self):
         """
@@ -288,15 +364,42 @@ class RSNPlatformDriver(PlatformDriver):
         
         log.debug("%r: get_eng_data...", self._platform_id)
         
-        numSeconds = 5.0
+        numSeconds = 10.0
        
         ntp_time = ntplib.system_to_ntp_time(time.time())
         
-        attrs = [('sec_node_port_J5_IP1_output_current',ntp_time-numSeconds)]
+        start_time = ntp_time -numSeconds
+        
+        attrs = [('sec_node_port_J5_IP1_output_current',start_time),
+                 ('sec_node_port_J5_IP1_output_voltage',start_time),
+                 ('sec_node_port_J5_IP1_output_temperature',start_time),
+                 ('sec_node_port_J5_IP1_gfd_high',start_time),
+                 ('sec_node_port_J5_IP1_gfd_low',start_time),
+                 ('sec_node_port_J5_IP1_board_state',start_time),
+                 ('sec_node_port_J5_IP1_error_state',start_time),
+                 ('sec_node_port_J5_IP1_gpio_state',start_time),
+                 ('sec_node_port_J5_IP1_ocd_current',start_time),
+                 ('sec_node_port_J5_IP1_ocd_time_const',start_time)]
         
 
         returnDict = self.get_attribute_values(attrs)
+        
+        pad_particle = Platform_Particle(returnDict,port_timestamp=ntp_time)
+        
+        pad_particle.set_internal_timestamp(timestamp=ntp_time)
+        
+        pad_particle._data_particle_type = 'MJ01A_sec_node_port_J5_IP1'  # stream name
+        
+        json_message = pad_particle.generate() # this cals parse values above to go from raw to values dict
       
+      
+        event = {
+            'type': DriverAsyncEvent.SAMPLE,
+            'value': json_message,
+            'time': time.time()
+        }
+      
+        self._send_event(event)
 #TODO need error handling                                                
 #        returnList = returnDict[nodeName][attributeName]
         
@@ -874,3 +977,4 @@ class RSNPlatformDriver(PlatformDriver):
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.START_PROFILER_MISSION, self._handler_connected_start_profiler_mission)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.ABORT_PROFILER_MISSION, self._handler_connected_abort_profiler_mission)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.GET_ENG_DATA, self._handler_connected_get_eng_data)
+        self._fsm.add_handler(PlatformDriverState.CONNECTED, ScheduledJob.ACQUIRE_SAMPLE, self._handler_connected_get_eng_data)
