@@ -1,4 +1,4 @@
-node_attributes:
+node_eng_data:
     AmbientTemp:
       attr_id : Ambient Temperature
       monitor_cycle_seconds : 3
@@ -41,7 +41,7 @@ node_attributes:
       ion_parameter_name: sec_node_cib_hotel_voltage
       ion_units : V
       ion_type : float32
-port_attributes:
+port_eng_data:
      outputCurrent :
        attr_id : Output Current
        monitor_cycle_seconds : 3
