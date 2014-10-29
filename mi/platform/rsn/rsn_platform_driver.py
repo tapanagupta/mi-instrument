@@ -167,6 +167,7 @@ class RSNPlatformDriver(PlatformDriver):
             log.error("'oms_uri' not present in driver_config = %s", driver_config)
             raise PlatformDriverException(msg="driver_config does not indicate 'oms_uri'")
 
+
     def _configure(self, driver_config):
         """
         Nothing special done here, only calls super.configure(driver_config)
@@ -175,15 +176,15 @@ class RSNPlatformDriver(PlatformDriver):
         """
         PlatformDriver._configure(self, driver_config)
 
-        self.nodeCfgFile = NodeConfiguration()
+        self.nodeCfg = NodeConfiguration()
  
         
         self._platform_id = driver_config['node_id']
             
         
-        self.nodeCfgFile.Open(self._platform_id,driver_config['driver_config_file']['default_cfg_file'],driver_config['driver_config_file']['node_cfg_file'])
+        self.nodeCfg.OpenNode(self._platform_id,driver_config['driver_config_file']['node_cfg_file'])
 
-        self.nodeCfgFile.Print();
+        self.nodeCfg.Print();
         
         self._construct_resource_schema()
         
@@ -370,48 +371,55 @@ class RSNPlatformDriver(PlatformDriver):
         
         start_time = ntp_time -numSeconds
         
-        attrs = [('sec_node_port_J5_IP1_output_current',start_time),
-                 ('sec_node_port_J5_IP1_output_voltage',start_time),
-                 ('sec_node_port_J5_IP1_output_temperature',start_time),
-                 ('sec_node_port_J5_IP1_gfd_high',start_time),
-                 ('sec_node_port_J5_IP1_gfd_low',start_time),
-                 ('sec_node_port_J5_IP1_board_state',start_time),
-                 ('sec_node_port_J5_IP1_error_state',start_time),
-                 ('sec_node_port_J5_IP1_gpio_state',start_time),
-                 ('sec_node_port_J5_IP1_ocd_current',start_time),
-                 ('sec_node_port_J5_IP1_ocd_time_const',start_time)]
         
+        
+        log.debug("\n%r  Streams", self._platform_id)
+        for streamKey,stream in sorted(self.nodeCfg.node_streams.iteritems()):
+            log.debug("%r %s", self._platform_id,streamKey)
+            attrs=list();
+            for streamAttrKey,streamAttr in sorted(stream.iteritems()):
+ #               log.debug("%r     %r = %r", self._platform_id, streamAttrKey,streamAttr)
+ 
+ 
+                if 'lastRcvSampleTime' not in streamAttr :   # first time this is called set this to a reasonable value
+                    streamAttr['lastRcvSampleTime'] = ntp_time - streamAttr['monitor_cycle_seconds']*2  
+                
+                lastRcvSampleTime = streamAttr['lastRcvSampleTime']
+                
+                if (lastRcvSampleTime+streamAttr['monitor_cycle_seconds'])<ntp_time : # if we think that the OMS will have data from us add it to the list
+                    if (ntp_time-lastRcvSampleTime)>(streamAttr['monitor_cycle_seconds']*10) : #make sure we dont reach too far back by accident or will 
+                        lastRcvSampleTime=ntp_time-(streamAttr['monitor_cycle_seconds']*10)    #clog up the OMS DB search
+                        
+                    attrs.append((streamAttrKey,lastRcvSampleTime+0.1)) # add a little bit of time to the last recieved so we don't get one we alread have again
+    
 
-        returnDict = self.get_attribute_values(attrs)
+            returnDict = self.get_attribute_values_from_oms(attrs) #go get the data from the OMS
+            
+            ts_list = self.get_all_returned_timestamps(returnDict) #get the list of all unique returned timestamps
+            
+            for ts in ts_list: #for each timestamp create a particle and emit it
+                oneTimestampAttrs = self.get_single_timestamp_list(stream,ts,returnDict) #go get the list at this timestamp
+                ionOneTimestampAttrs = self.convertAttrsToIon(stream,oneTimestampAttrs) #scale the attrs and convert the names to ion
+          
+                pad_particle = Platform_Particle(ionOneTimestampAttrs,port_timestamp=ts) #need to review what port timetamp meaning is..
+          
+                pad_particle.set_internal_timestamp(timestamp=ts)
+          
+                pad_particle._data_particle_type = streamKey  # stream name
+          
+                json_message = pad_particle.generate() # this cals parse values above to go from raw to values dict
+   
+                event = {
+                     'type': DriverAsyncEvent.SAMPLE,
+                     'value': json_message,
+                     'time': time.time()
+                }
         
-        pad_particle = Platform_Particle(returnDict,port_timestamp=ntp_time)
-        
-        pad_particle.set_internal_timestamp(timestamp=ntp_time)
-        
-        pad_particle._data_particle_type = 'MJ01A_sec_node_port_J5_IP1'  # stream name
-        
-        json_message = pad_particle.generate() # this cals parse values above to go from raw to values dict
-      
-      
-        event = {
-            'type': DriverAsyncEvent.SAMPLE,
-            'value': json_message,
-            'time': time.time()
-        }
-      
-        self._send_event(event)
-#TODO need error handling                                                
-#        returnList = returnDict[nodeName][attributeName]
-        
-        
-
-        
-        
-        
-        
+                self._send_event(event)
+ 
         return 1
 
-    def get_attribute_values(self, attrs):
+    def get_attribute_values_from_oms(self,attrs):
         """
         """
         if not isinstance(attrs, (list, tuple)):
@@ -420,22 +428,12 @@ class RSNPlatformDriver(PlatformDriver):
 
         if self._rsn_oms is None:
             raise PlatformConnectionException("Cannot get_platform_attribute_values: _rsn_oms object required (created via connect() call)")
-
-        # convert the ION system time from_time to NTP, as this is the time
-        # format used by the RSN OMS interface:
         
-        # also convert the ION parameter names to RSN attribute IDs
-        attrs_ntp = [(self.nodeCfgFile.GetAttrFromParameter(attr_id), from_time)
-                     for (attr_id, from_time) in attrs]
-        
-        
-        
-        
-        log.debug("get_attribute_values(ntp): attrs=%s", attrs_ntp)
+#        log.debug("get_attribute_values: attrs=%s", attrs)
 
         try:
             retval = self._rsn_oms.attr.get_platform_attribute_values(self._platform_id,
-                                                                      attrs_ntp)
+                                                                      attrs)
         except Exception as e:
             raise PlatformConnectionException(msg="Cannot get_platform_attribute_values: %s" % str(e))
 
@@ -444,18 +442,73 @@ class RSNPlatformDriver(PlatformDriver):
                                     "requested platform '%s'" % self._platform_id)
 
         attr_values = retval[self._platform_id]
+    
+        # reported timestamps are already in NTP. Just return the dict:
+        return attr_values
+    
+    def get_all_returned_timestamps(self, attrs):
+   
+        ts_list = list()
+
+        #go through all of the returned values and get the unique timestamps. Each
+        #particle wil have data for a unique timestamp
+        for attr_id, attr_vals in attrs.iteritems():
+
+            for v, ts in attr_vals:
+                if not ts in ts_list:
+                    ts_list.append(ts)
+
+        return(ts_list)
+
         
-        attrs_return = {}
+#        log.debug("timestamp list = =%s", ts_list)
+
         
-        #convert back to ION parameter name and scale from OMS to ION
-        for key in attr_values :
-            newAttrList = []
-            scaleFactor = self.nodeCfgFile.GetScaleFactorFromAttr(key)
-            for v, ts in attr_values[key]:
-                newAttrList.append((v*scaleFactor,ts))
-            attrs_return[self.nodeCfgFile.GetParameterFromAttr(key)] = newAttrList
+
+        # reported timestamps are already in NTP. Just return the dict:
+        return attrs_return
+    
+    
+    def get_single_timestamp_list(self,stream,ts_in, attrs):
+   
+
+        #create a list of sample data from just the single timestamp
+   
+        newAttrList = [] #key value list for this timestamp
+
+        for key in stream : # assuming we will put all values in stream even if we didn't get a sample this time
+            found_ts_match=0 
+            if key in attrs :  
+                for v, ts in attrs[key]:
+                    if(ts==ts_in):
+                        if(found_ts_match==0):
+                            newAttrList.append((key,v))
+                            found_ts_match=1
+                            if ts_in>stream[key]['lastRcvSampleTime'] :
+                                stream[key]['lastRcvSampleTime']=ts_in
+            if(found_ts_match==0):
+                newAttrList.append((key,'none'))  #What is the correct zero fill approach?
             
-        log.debug("Back to ION=%s", attrs_return)
+#        log.debug("timestamp list = =%s", newAttrList)
+
+        return(newAttrList)
+    
+    
+    def convertAttrsToIon(self, stream, attrs):
+        """
+        """
+  
+        attrs_return = []
+        
+        #convert back to ION parameter name and scale from OMS to ION            
+        for key,v in attrs:
+            scaleFactor = stream[key]['scale_factor']
+            if v == 'none':
+                attrs_return.append((stream[key]['ion_parameter_name'],'none'))
+            else:
+                attrs_return.append((stream[key]['ion_parameter_name'],v*scaleFactor))
+            
+ #       log.debug("Back to ION=%s", attrs_return)
 
         
 
@@ -638,7 +691,7 @@ class RSNPlatformDriver(PlatformDriver):
          
          
         try: 
-            oms_port_id = self.nodeCfgFile.GetOMSPortId(port_id);
+            oms_port_id = self.nodeCfg.GetOMSPortId(port_id);
         except Exception as e:
             raise PlatformConnectionException(msg="Cannot turn_on_platform_port: %s" % str(e))
         
@@ -667,7 +720,7 @@ class RSNPlatformDriver(PlatformDriver):
     def turn_off_port(self, port_id):
 
         try: 
-            oms_port_id = self.nodeCfgFile.GetOMSPortId(port_id);
+            oms_port_id = self.nodeCfg.GetOMSPortId(port_id);
         except Exception as e:
             raise PlatformConnectionException(msg="Cannot turn_off_platform_port: %s" % str(e))
   
