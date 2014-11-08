@@ -27,7 +27,7 @@ class NodeConfiguration(object):
     
     def __init__(self):
         self.meta_data = {}
-        self.node_port_list = {}
+        self.node_port_info = {}
         self.node_streams = {}
 
  
