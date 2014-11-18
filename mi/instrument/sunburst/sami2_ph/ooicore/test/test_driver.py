@@ -36,8 +36,8 @@ from mi.idk.unit_test import AgentCapabilityType
 
 from mi.core.instrument.chunker import StringChunker
 
-from pyon.agent.agent import ResourceAgentEvent
-from pyon.agent.agent import ResourceAgentState
+from mi.core.instrument.instrument_driver import ResourceAgentEvent
+from mi.core.instrument.instrument_driver import ResourceAgentState
 
 from mi.instrument.sunburst.driver import Prompt
 from mi.instrument.sunburst.driver import SAMI_NEWLINE
@@ -286,10 +286,10 @@ class DriverTestMixinSub(SamiMixin):
              0x0BAC, 0x06AB, 0x069E, 0x07FF,
              0x0BAD, 0x06D5, 0x06A2, 0x0802],
             REQUIRED: True},
-        PhsenSamiSampleDataParticleKey.RESERVED_UNUSED: {TYPE: int, VALUE: 0x0000, REQUIRED: True},
         PhsenSamiSampleDataParticleKey.VOLTAGE_BATTERY: {TYPE: int, VALUE: 0x0D65, REQUIRED: True},
         PhsenSamiSampleDataParticleKey.END_THERMISTOR: {TYPE: int, VALUE: 0x0636, REQUIRED: True},
-        PhsenSamiSampleDataParticleKey.CHECKSUM: {TYPE: int, VALUE: 0xCE, REQUIRED: True}
+        PhsenSamiSampleDataParticleKey.CHECKSUM: {TYPE: int, VALUE: 0xCE, REQUIRED: True},
+        PhsenSamiSampleDataParticleKey.RESERVED_UNUSED: {TYPE: int, VALUE: 0x00, REQUIRED: False}
     }
 
     _configuration_parameters = {
@@ -470,8 +470,7 @@ class DriverUnitTest(SamiUnitTest, DriverTestMixinSub):
         """
         chunker = StringChunker(Protocol.sieve_function)
 
-        for part in [self.VALID_STATUS_MESSAGE, self.VALID_CONTROL_RECORD, self.VALID_DATA_SAMPLE,
-                     self.VALID_CONFIG_STRING]:
+        for part in [self.VALID_STATUS_MESSAGE, self.VALID_DATA_SAMPLE, self.VALID_CONFIG_STRING]:
             self.assert_chunker_sample(chunker, part)
             self.assert_chunker_sample_with_noise(chunker, part)
             self.assert_chunker_fragmented_sample(chunker, part)
@@ -481,11 +480,6 @@ class DriverUnitTest(SamiUnitTest, DriverTestMixinSub):
         self.assert_chunker_sample_with_noise(chunker, self.VALID_STATUS_MESSAGE)
         self.assert_chunker_fragmented_sample(chunker, self.VALID_STATUS_MESSAGE)
         self.assert_chunker_combined_sample(chunker, self.VALID_STATUS_MESSAGE)
-
-        self.assert_chunker_sample(chunker, self.VALID_CONTROL_RECORD)
-        self.assert_chunker_sample_with_noise(chunker, self.VALID_CONTROL_RECORD)
-        self.assert_chunker_fragmented_sample(chunker, self.VALID_CONTROL_RECORD)
-        self.assert_chunker_combined_sample(chunker, self.VALID_CONTROL_RECORD)
 
         self.assert_chunker_sample(chunker, self.VALID_DATA_SAMPLE)
         self.assert_chunker_sample_with_noise(chunker, self.VALID_DATA_SAMPLE)
@@ -510,8 +504,6 @@ class DriverUnitTest(SamiUnitTest, DriverTestMixinSub):
         # Start validating data particles
         self.assert_particle_published(
             driver, self.VALID_STATUS_MESSAGE, self.assert_particle_regular_status, True)
-        self.assert_particle_published(
-            driver, self.VALID_CONTROL_RECORD, self.assert_particle_control_record, True)
         self.assert_particle_published(
             driver, self.VALID_DATA_SAMPLE, self.assert_particle_sami_data_sample, True)
         self.assert_particle_published(
@@ -545,6 +537,7 @@ class DriverUnitTest(SamiUnitTest, DriverTestMixinSub):
         driver = InstrumentDriver(self._got_data_event_callback)
         self.assert_capabilities(driver, self.capabilities_test_dict)
 
+    @unittest.skip('long running test, avoid for regular unit testing')
     def test_pump_commands(self):
 
         driver = InstrumentDriver(self._got_data_event_callback)
@@ -600,6 +593,7 @@ class DriverUnitTest(SamiUnitTest, DriverTestMixinSub):
         self.assertEqual(1, command_count, 'REAGENT_FLUSH command count %s != 1' % command_count)
         driver._protocol._connection.send.reset_mock()
 
+    @unittest.skip('long running test, avoid for regular unit testing')
     def test_pump_timing(self):
         driver = InstrumentDriver(self._got_data_event_callback)
         self.assert_initialize_driver(driver)
@@ -622,6 +616,7 @@ class DriverUnitTest(SamiUnitTest, DriverTestMixinSub):
         driver._protocol._handler_reagent_flush_execute_50ml()
         stats.assert_timing(1)
 
+    @unittest.skip('long running test, avoid for regular unit testing')
     def test_waiting_discover(self):
 
         driver = InstrumentDriver(self._got_data_event_callback)

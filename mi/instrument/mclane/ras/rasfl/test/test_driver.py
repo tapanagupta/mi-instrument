@@ -59,12 +59,11 @@ from mi.instrument.mclane.ras.rasfl.driver import \
 from mi.core.exceptions import SampleException, \
     InstrumentParameterException
 
-from interface.objects import AgentCommand
+# from interface.objects import AgentCommand
 
-from ion.agents.instrument.direct_access.direct_access_server import DirectAccessTypes
-from pyon.agent.agent import \
-    ResourceAgentEvent, \
-    ResourceAgentState
+
+from mi.core.direct_access_server import DirectAccessTypes
+from mi.core.instrument.instrument_driver import ResourceAgentEvent, ResourceAgentState
 
 # Globals
 raw_stream_received = False
