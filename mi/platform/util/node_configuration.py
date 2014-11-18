@@ -65,7 +65,7 @@ class NodeConfiguration(object):
         self.node_port_info = copy.deepcopy(node_config["port_info"])  #info about this specific node
         self.node_streams   = copy.deepcopy(node_config["node_streams"])  #info about this specific node
     
-         
+     
 
     
     def Print(self):

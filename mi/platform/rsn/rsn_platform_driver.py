@@ -92,31 +92,26 @@ class RSNPlatformDriverEvent(PlatformDriverEvent):
     """
     The ones for superclass plus a few others for the CONNECTED state.
     """
-    CONNECT_INSTRUMENT        = 'RSN_PLATFORM_DRIVER_CONNECT_INSTRUMENT'
-    DISCONNECT_INSTRUMENT     = 'RSN_PLATFORM_DRIVER_DISCONNECT_INSTRUMENT'
     GET_ENG_DATA              = 'RSN_PLATFORM_DRIVER_GET_ENG_DATA'
     TURN_ON_PORT              = 'RSN_PLATFORM_DRIVER_TURN_ON_PORT'
     TURN_OFF_PORT             = 'RSN_PLATFORM_DRIVER_TURN_OFF_PORT'
     SET_PORT_OVER_CURRENT_LIMITS             = 'RSN_PLATFORM_DRIVER_SET_PORT_OVER_CURRENT_LIMITS'
     START_PROFILER_MISSION    = 'RSN_PLATFORM_DRIVER_START_PROFILER_MISSION'
-    ABORT_PROFILER_MISSION    = 'RSN_PLATFORM_DRIVER_ABORT_PROFILER_MISSION'
-    CHECK_SYNC                = 'RSN_PLATFORM_DRIVER_CHECK_SYNC'
-
+    STOP_PROFILER_MISSION     = 'RSN_PLATFORM_DRIVER_STOP_PROFILER_MISSION'
+    GET_MISSION_STATUS        = 'RSN_PLATFORM_DRIVER_GET_MISSION_STATUS'
+    GET_AVAILABLE_MISSIONS    = 'RSN_PLATFORM_DRIVER_GET_AVAILABLE_MISSIONS'
 
 class RSNPlatformDriverCapability(BaseEnum):
-    CONNECT_INSTRUMENT        = RSNPlatformDriverEvent.CONNECT_INSTRUMENT
-    DISCONNECT_INSTRUMENT     = RSNPlatformDriverEvent.DISCONNECT_INSTRUMENT
     GET_ENG_DATA              = RSNPlatformDriverEvent.GET_ENG_DATA
     TURN_ON_PORT              = RSNPlatformDriverEvent.TURN_ON_PORT
     TURN_OFF_PORT             = RSNPlatformDriverEvent.TURN_OFF_PORT
     SET_PORT_OVER_CURRENT_LIMITS             = RSNPlatformDriverEvent.SET_PORT_OVER_CURRENT_LIMITS
     START_PROFILER_MISSION    = RSNPlatformDriverEvent.START_PROFILER_MISSION
-    ABORT_PROFILER_MISSION    = RSNPlatformDriverEvent.ABORT_PROFILER_MISSION
+    STOP_PROFILER_MISSION     = RSNPlatformDriverEvent.STOP_PROFILER_MISSION
+    GET_MISSION_STATUS         = RSNPlatformDriverEvent.GET_MISSION_STATUS
+    GET_AVAILABLE_MISSIONS     = RSNPlatformDriverEvent.GET_AVAILABLE_MISSIONS
  
-    
-#    OOIION-1623 Remove until Check Sync requirements fully defined
-#    CHECK_SYNC                = RSNPlatformDriverEvent.CHECK_SYNC
-
+ 
 
 class RSNPlatformDriver(PlatformDriver):
     """
@@ -180,11 +175,27 @@ class RSNPlatformDriver(PlatformDriver):
 
         self.nodeCfg = NodeConfiguration()
  
-        
+         
         self._platform_id = driver_config['node_id']
             
         
         self.nodeCfg.OpenNode(self._platform_id,driver_config['driver_config_file']['node_cfg_file'])
+
+        
+        if 'nms_source' in self.nodeCfg.node_meta_data :
+            self.nms_source = self.nodeCfg.node_meta_data['nms_source']
+        else:
+            self.nms_source = 1
+            
+            
+        if 'oms_sample_rate' in self.nodeCfg.node_meta_data :
+            self.oms_sample_rate = self.nodeCfg.node_meta_data['oms_sample_rate']
+        else:
+            self.oms_sample_rate = 60
+        
+
+
+
 
         self.nodeCfg.Print();
         
@@ -206,7 +217,7 @@ class RSNPlatformDriver(PlatformDriver):
         method = partial(event_callback, self, RSNPlatformDriverEvent.GET_ENG_DATA)
         
         
-        self._job = self._scheduler.add_interval_job(method, seconds=3)
+        self._job = self._scheduler.add_interval_job(method, seconds=self.oms_sample_rate)
        
 
     def _delete_scheduler(self):
@@ -214,7 +225,9 @@ class RSNPlatformDriver(PlatformDriver):
         Remove the autosample schedule.
         """
         try:
-            self._scheduler.remove_scheduler(self._job)
+            self._scheduler.unschedule_job(self._job)
+            self._scheduler.shutdown()
+ #           self._scheduler.remove_scheduler(self._job)
         except KeyError:
             log.info('Failed to remove scheduled job for ACQUIRE_SAMPLE')
         
@@ -331,8 +344,8 @@ class RSNPlatformDriver(PlatformDriver):
         Stops event dispatch and destroys the CIOMSClient instance.
         """
         self._stop_event_dispatch()
-        self.event_subscriber.stop()
-        self.event_subscriber=None
+ #       self.event_subscriber.stop()
+#        self.event_subscriber=None
   
 
         CIOMSClientFactory.destroy_instance(self._rsn_oms)
@@ -351,6 +364,14 @@ class RSNPlatformDriver(PlatformDriver):
 
    
     def get_eng_data(self):
+        if self.nms_source == 1:
+            self.get_nms_eng_data()
+        else :
+            self.get_node_eng_data()
+        
+        
+    def get_node_eng_data(self):
+        
         
         log.debug("%r: get_eng_data...", self._platform_id)
        
@@ -369,37 +390,104 @@ class RSNPlatformDriver(PlatformDriver):
                 lastRcvSampleTime = streamAttr['lastRcvSampleTime']
                 
                 if (lastRcvSampleTime+streamAttr['monitor_cycle_seconds'])<ntp_time : # if we think that the OMS will have data from us add it to the list
+                    if (ntp_time-lastRcvSampleTime)>(streamAttr['monitor_cycle_seconds']*10) : #make sure we don't reach too far back by accident or will 
+                        lastRcvSampleTime=ntp_time-(streamAttr['monitor_cycle_seconds']*10)    #clog up the OMS DB search
+                        
+                    attrs.append((streamAttrKey,lastRcvSampleTime+0.1)) # add a little bit of time to the last received so we don't get one we already have again
+            
+            if len(attrs)>0 :
+                
+            
+                returnDictTemp = self.get_attribute_values_from_oms(attrs) #go get the data from the OMS
+                
+                returnDict = self.round_timestamps(returnDictTemp)
+                
+                ts_list = self.get_all_returned_timestamps(returnDict) #get the list of all unique returned timestamps
+                
+                for ts in ts_list: #for each timestamp create a particle and emit it
+                    oneTimestampAttrs = self.get_single_timestamp_list(stream,ts,returnDict) #go get the list at this timestamp
+                    ionOneTimestampAttrs = self.convertAttrsToIon(stream,oneTimestampAttrs) #scale the attrs and convert the names to ion
+              
+                    pad_particle = Platform_Particle(ionOneTimestampAttrs,port_timestamp=ts) #need to review what port timetamp meaning is..
+              
+                    pad_particle.set_internal_timestamp(timestamp=ts)
+              
+                    pad_particle._data_particle_type = streamKey  # stream name
+              
+                    json_message = pad_particle.generate() # this cals parse values above to go from raw to values dict
+       
+                    event = {
+                         'type': DriverAsyncEvent.SAMPLE,
+                         'value': json_message,
+                         'time': time.time()
+                    }
+            
+                    self._send_event(event)
+ 
+        return 1
+
+    def get_nms_eng_data(self):
+        
+        log.debug("%r: get_nms_eng_data...", self._platform_id)
+       
+        ntp_time = ntplib.system_to_ntp_time(time.time())      
+        
+        
+        attrs=list();
+        
+        for streamKey,stream in sorted(self.nodeCfg.node_streams.iteritems()):
+ #           log.debug("%r Stream(%s)", self._platform_id,streamKey)
+            
+            for streamAttrKey,streamAttr in sorted(stream.iteritems()):
+ #               log.debug("%r     %r = %r", self._platform_id, streamAttrKey,streamAttr)
+ 
+ 
+                if 'lastRcvSampleTime' not in streamAttr :   # first time this is called set this to a reasonable value
+                    streamAttr['lastRcvSampleTime'] = ntp_time - streamAttr['monitor_cycle_seconds']*2  
+                
+                lastRcvSampleTime = streamAttr['lastRcvSampleTime']
+                
+                if (lastRcvSampleTime+streamAttr['monitor_cycle_seconds'])<ntp_time : # if we think that the OMS will have data from us add it to the list
                     if (ntp_time-lastRcvSampleTime)>(streamAttr['monitor_cycle_seconds']*10) : #make sure we dont reach too far back by accident or will 
                         lastRcvSampleTime=ntp_time-(streamAttr['monitor_cycle_seconds']*10)    #clog up the OMS DB search
                         
                     attrs.append((streamAttrKey,lastRcvSampleTime+0.1)) # add a little bit of time to the last recieved so we don't get one we alread have again
-    
-
+            
+        if len(attrs)>0 :
+                
+            
             returnDict = self.get_attribute_values_from_oms(attrs) #go get the data from the OMS
             
-            ts_list = self.get_all_returned_timestamps(returnDict) #get the list of all unique returned timestamps
             
-            for ts in ts_list: #for each timestamp create a particle and emit it
-                oneTimestampAttrs = self.get_single_timestamp_list(stream,ts,returnDict) #go get the list at this timestamp
-                ionOneTimestampAttrs = self.convertAttrsToIon(stream,oneTimestampAttrs) #scale the attrs and convert the names to ion
-          
-                pad_particle = Platform_Particle(ionOneTimestampAttrs,port_timestamp=ts) #need to review what port timetamp meaning is..
-          
-                pad_particle.set_internal_timestamp(timestamp=ts)
-          
-                pad_particle._data_particle_type = streamKey  # stream name
-          
-                json_message = pad_particle.generate() # this cals parse values above to go from raw to values dict
-   
-                event = {
-                     'type': DriverAsyncEvent.SAMPLE,
-                     'value': json_message,
-                     'time': time.time()
-                }
-        
-                self._send_event(event)
- 
+            for attr_id, attr_vals in returnDict.iteritems(): # go through the returned list of attributes
+
+                for streamKey,stream in sorted(self.nodeCfg.node_streams.iteritems()): #go through all the streams for this platform
+                    if attr_id in stream :  # see if this attribute is in this stream
+                        for v, ts in attr_vals:
+                            stream[attr_id]['lastRcvSampleTime']=ts
+                            ionAttrs = self.convertAttrsToIon(stream,[(attr_id,v)]) #scale the attrs and convert the names to ion
+              
+                    
+                            pad_particle = Platform_Particle(ionAttrs,port_timestamp=ts)
+              
+                            pad_particle.set_internal_timestamp(timestamp=ts)
+                  
+                            pad_particle._data_particle_type = streamKey  # stream name
+                  
+                            json_message = pad_particle.generate() # this cals parse values above to go from raw to values dict
+           
+                            event = {
+                                      'type': DriverAsyncEvent.SAMPLE,
+                                      'value': json_message,
+                                      'time': time.time()
+                                      }
+                
+                            self._send_event(event)
+                 
+     
         return 1
+
+
 
     def get_attribute_values_from_oms(self,attrs):
         """
@@ -411,19 +499,26 @@ class RSNPlatformDriver(PlatformDriver):
         if self._rsn_oms is None:
             raise PlatformConnectionException("Cannot get_platform_attribute_values: _rsn_oms object required (created via connect() call)")
         
-#        log.debug("get_attribute_values: attrs=%s", attrs)
+        log.debug("get_attribute_values: attrs=%s", self._platform_id)
+        log.debug("get_attribute_values: attrs=%s", attrs)
 
         try:
             retval = self._rsn_oms.attr.get_platform_attribute_values(self._platform_id,
                                                                       attrs)
         except Exception as e:
-            raise PlatformConnectionException(msg="Cannot get_platform_attribute_values: %s" % str(e))
+            raise PlatformConnectionException(msg="get_attribute_values_from_oms Cannot get_platform_attribute_values: %s" % str(e))
 
         if not self._platform_id in retval:
-            raise PlatformException("Unexpected: response does not include "
+            raise PlatformException("Unexpected: response get_attribute_values_from_oms does not include "
                                     "requested platform '%s'" % self._platform_id)
 
         attr_values = retval[self._platform_id]
+    
+        if isinstance(attr_values,str):
+            raise PlatformException("Unexpected: response get_attribute_values_from_oms "
+                                    "'%s'" % attr_values ) 
+   
+            
     
         # reported timestamps are already in NTP. Just return the dict:
         return attr_values
@@ -441,11 +536,6 @@ class RSNPlatformDriver(PlatformDriver):
                     ts_list.append(ts)
 
         return(ts_list)
-
-        
-#        log.debug("timestamp list = =%s", ts_list)
-
-        return attrs_return
     
     
     def get_single_timestamp_list(self,stream,ts_in, attrs):
@@ -465,13 +555,35 @@ class RSNPlatformDriver(PlatformDriver):
                             found_ts_match=1
                             if ts_in>stream[key]['lastRcvSampleTime'] :
                                 stream[key]['lastRcvSampleTime']=ts_in
-            if(found_ts_match==0):
-                newAttrList.append((key,'none'))  #What is the correct zero fill approach?
+#            if(found_ts_match==0):
+#                newAttrList.append((key,'none'))  #What is the correct zero fill approach?
             
 #        log.debug("timestamp list = =%s", newAttrList)
 
         return(newAttrList)
     
+    
+    
+    def round_timestamps(self, attrs):
+        """
+        """
+
+        new_attrs = {}
+
+        for attr_id, attr_vals in attrs.iteritems():
+
+            new_list = list();
+            
+            for v, ts in attr_vals:
+                 new_ts = round(ts,0)
+                 new_list.append((v,new_ts))
+
+            new_attrs[attr_id]=new_list
+            
+        return(new_attrs)
+
+        
+
     
     def convertAttrsToIon(self, stream, attrs):
         """
@@ -608,13 +720,13 @@ class RSNPlatformDriver(PlatformDriver):
 
         return dic_plat  # note: return the dic for the platform
     
-    def start_profiler_mission(self, mission_name):
+    def start_profiler_mission(self, mission_name,src):
         if self._rsn_oms is None:
             raise PlatformConnectionException("Cannot start_profiler_mission: _rsn_oms object required (created via connect() call)")
 
         try:
-            response = self._rsn_oms.port.start_profiler_mission(self._platform_id,
-                                                                mission_name)
+            response = self._rsn_oms.profiler.start_mission(self._platform_id,
+                                                                mission_name,src)
         except Exception as e:
             raise PlatformConnectionException(msg="Cannot start_profiler_mission: %s" % str(e))
 
@@ -627,16 +739,16 @@ class RSNPlatformDriver(PlatformDriver):
 
         return dic_plat  # note: return the dic for the platform
 
-    def abort_profiler_mission(self):
+    def stop_profiler_mission(self,flag,src):
         if self._rsn_oms is None:
-            raise PlatformConnectionException("Cannot abort_profiler_mission: _rsn_oms object required (created via connect() call)")
+            raise PlatformConnectionException("Cannot stop_profiler_mission: _rsn_oms object required (created via connect() call)")
 
         try:
-            response = self._rsn_oms.profiler.abort_profiler_mission(self._platform_id)
+            response = self._rsn_oms.profiler.stop_mission(self._platform_id,flag,src)
         except Exception as e:
-            raise PlatformConnectionException(msg="Cannot abort_profiler_mission: %s" % str(e))
+            raise PlatformConnectionException(msg="Cannot stop_profiler_mission: %s" % str(e))
 
-        log.debug("%r: abort_profiler_mission response: %s",
+        log.debug("%r: stop_profiler_mission response: %s",
                   self._platform_id, response)
 
         dic_plat = self._verify_platform_id_in_response(response)
@@ -644,6 +756,43 @@ class RSNPlatformDriver(PlatformDriver):
         #self._verify_port_id_in_response(port_id, dic_plat)
 
         return dic_plat  # note: return the dic for the platform
+
+    def get_mission_status(self):
+        if self._rsn_oms is None:
+            raise PlatformConnectionException("Cannot get_mission_status: _rsn_oms object required (created via connect() call)")
+
+        try:
+            response = self._rsn_oms.profiler.get_mission_status(self._platform_id)
+        except Exception as e:
+            raise PlatformConnectionException(msg="Cannot get_mission_status: %s" % str(e))
+
+        log.debug("%r: get_mission_status response: %s",
+                  self._platform_id, response)
+
+        dic_plat = self._verify_platform_id_in_response(response)
+        # TODO commented
+        #self._verify_port_id_in_response(port_id, dic_plat)
+
+        return dic_plat  # note: return the dic for the platform
+    
+    def get_available_missions(self):
+        if self._rsn_oms is None:
+            raise PlatformConnectionException("Cannot get_available_missions: _rsn_oms object required (created via connect() call)")
+
+        try:
+            response = self._rsn_oms.profiler.get_available_missions(self._platform_id)
+        except Exception as e:
+            raise PlatformConnectionException(msg="Cannot get_available_missions: %s" % str(e))
+
+        log.debug("%r: get_available_missions response: %s",
+                  self._platform_id, response)
+
+        dic_plat = self._verify_platform_id_in_response(response)
+        # TODO commented
+        #self._verify_port_id_in_response(port_id, dic_plat)
+
+        return dic_plat  # note: return the dic for the platform
+
 
 
     ###############################################
@@ -789,8 +938,14 @@ class RSNPlatformDriver(PlatformDriver):
         elif cmd == RSNPlatformDriverEvent.START_PROFILER_MISSION:
             result = self.start_profiler_mission(*args, **kwargs)
 
-        elif cmd == RSNPlatformDriverEvent.ABORT_PROFILER_MISSION:
-            result = self.abort_profiler_mission(*args, **kwargs)
+        elif cmd == RSNPlatformDriverEvent.STOP_PROFILER_MISSION:
+            result = self.stop_profiler_mission(*args, **kwargs)
+
+        elif cmd == RSNPlatformDriverEvent.GET_MISSION_STATUS:
+            result = self.get_mission_status(*args, **kwargs)
+
+        elif cmd == RSNPlatformDriverEvent.GET_AVAILABLE_MISSIONS:
+            result = self.get_available_missions(*args, **kwargs)
 
         else:
             result = super(RSNPlatformDriver, self).execute(cmd, args, kwargs)
@@ -806,19 +961,71 @@ class RSNPlatformDriver(PlatformDriver):
     def _handler_connected_start_profiler_mission(self, *args, **kwargs):
         """
         """
+        
 #        profile_mission_name = kwargs.get('profile_mission_name', None)
         profile_mission_name = kwargs.get('profile_mission_name', 'Test_Profile_Mission_Name')
         if profile_mission_name is None :
             raise InstrumentException('start_profiler_mission: missing profile_mission_name argument')
 
+        src = kwargs.get('src', None)
+        if src is None:
+            raise InstrumentException('set_port_over_current_limits: missing src argument')
+
+
 
         try:
-            result = self.start_profiler_mission(profile_mission_name)
+            result = self.start_profiler_mission(profile_mission_name,src)
             return None, result
 
         except PlatformConnectionException as e:
             return self._connection_lost(RSNPlatformDriverEvent.START_PROFILER_MISSION,
                                          args, kwargs, e)
+            
+            
+    def _handler_connected_stop_profiler_mission(self, *args, **kwargs):
+        """
+        """
+        
+        flag = kwargs.get('flag', None)
+        if milliamps is None:
+            raise InstrumentException('_handler_connected_stop_profiler_mission: missing flag argument')
+
+        src = kwargs.get('src', None)
+        if src is None:
+            raise InstrumentException('set_port_over_current_limits: missing src argument')
+
+        
+        
+        try:
+            result = self.stop_profiler_mission()
+            return None, result
+
+        except PlatformConnectionException as e:
+            return self._connection_lost(RSNPlatformDriverEvent.STOP_PROFILER_MISSION,
+                                         args, kwargs, e)   
+            
+    def _handler_connected_get_mission_status(self, *args, **kwargs):
+        """
+        """
+        try:
+            result = self.get_mission_status()
+            return None, result
+
+        except PlatformConnectionException as e:
+            return self._connection_lost(RSNPlatformDriverEvent.GET_MISSION_STATUS,
+                                         args, kwargs, e)  
+             
+    def _handler_connected_get_available_missions(self, *args, **kwargs):
+        """
+        """
+        try:
+            result = self.get_available_missions()
+            return None, result
+
+        except PlatformConnectionException as e:
+            return self._connection_lost(RSNPlatformDriverEvent.GET_AVAILABLE_MISSIONS,
+                                         args, kwargs, e)   
+
             
             
     def _handler_connected_get_eng_data(self, *args, **kwargs):
@@ -833,16 +1040,7 @@ class RSNPlatformDriver(PlatformDriver):
             return self._connection_lost(RSNPlatformDriverEvent.GET_ENG_DATA,
                                          args, kwargs, e)
             
-    def _handler_connected_abort_profiler_mission(self, *args, **kwargs):
-        """
-        """
-        try:
-            result = self.abort_profiler_mission()
-            return None, result
-
-        except PlatformConnectionException as e:
-            return self._connection_lost(RSNPlatformDriverEvent.ABORT_PROFILER_MISSION,
-                                         args, kwargs, e)
+    
     
     def _handler_connected_set_port_over_current_limits(self, *args, **kwargs):
         """
@@ -860,7 +1058,7 @@ class RSNPlatformDriver(PlatformDriver):
             raise InstrumentException('set_port_over_current_limits: missing microseconds argument')
 
         src = kwargs.get('src', None)
-        if milliamps is None:
+        if src is None:
             raise InstrumentException('set_port_over_current_limits: missing src argument')
 
 
@@ -934,6 +1132,8 @@ class RSNPlatformDriver(PlatformDriver):
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.SET_PORT_OVER_CURRENT_LIMITS, self._handler_connected_set_port_over_current_limits)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.TURN_OFF_PORT, self._handler_connected_turn_off_port)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.START_PROFILER_MISSION, self._handler_connected_start_profiler_mission)
-        self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.ABORT_PROFILER_MISSION, self._handler_connected_abort_profiler_mission)
+        self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.STOP_PROFILER_MISSION, self._handler_connected_stop_profiler_mission)
+        self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.GET_MISSION_STATUS, self._handler_connected_get_mission_status)
+        self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.GET_AVAILABLE_MISSIONS, self._handler_connected_get_available_missions)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, RSNPlatformDriverEvent.GET_ENG_DATA, self._handler_connected_get_eng_data)
         self._fsm.add_handler(PlatformDriverState.CONNECTED, ScheduledJob.ACQUIRE_SAMPLE, self._handler_connected_get_eng_data)
