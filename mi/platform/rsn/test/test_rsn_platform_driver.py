@@ -24,7 +24,7 @@ from mi.platform.util.network_util import NetworkUtil
 
 from mi.platform.rsn.rsn_platform_driver import RSNPlatformDriver
 
-# from pyon.util.int_test import IonIntegrationTestCase
+from mi.core.unit_test import IonIntegrationTestCase
 
 from nose.plugins.attrib import attr
 
