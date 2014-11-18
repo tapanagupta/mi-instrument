@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-@package ion.agents.platform.test.helper
-@file    ion/agents/platform/test/helper.py
+@package mi.platform.test.helper
+@file    mi/platform/test/helper.py
 @author  Carlos Rueda
 @brief   Definitions and functionality to facilitate common validations in tests.
          It also provides some supporting methods related with the simulator.
@@ -16,12 +16,12 @@ __author__ = 'Carlos Rueda'
 __license__ = 'Apache 2.0'
 
 
-from ion.agents.platform.rsn.simulator.logger import Logger
+from mi.platform.rsn.simulator.logger import Logger
 log = Logger.get_logger()
 
-from ion.agents.platform.responses import NormalResponse, InvalidResponse
-from ion.agents.platform.rsn.simulator.oms_simulator import CIOMSSimulator
-from ion.agents.platform.rsn.oms_client_factory import CIOMSClientFactory
+from mi.platform.responses import NormalResponse, InvalidResponse
+from mi.platform.rsn.simulator.oms_simulator import CIOMSSimulator
+from mi.platform.rsn.oms_client_factory import CIOMSClientFactory
 
 import os
 
