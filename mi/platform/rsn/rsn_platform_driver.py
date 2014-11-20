@@ -21,7 +21,7 @@ from functools import partial
 from mi.core.common import BaseEnum
 from mi.core.scheduler import PolledScheduler
 from mi.platform.platform_driver import PlatformDriver
-from mi.core.instrument.data_particle import DataParticle
+from mi.core.instrument.data_particle import DataParticle, DataParticleKey
 from mi.core.instrument.instrument_driver import DriverAsyncEvent
 from mi.platform.platform_driver import PlatformDriverState
 from mi.platform.platform_driver import PlatformDriverEvent
@@ -60,16 +60,7 @@ class Platform_Particle(DataParticle):
     The contents of the parameter dictionary, published at the start of a scan
     """
     def _build_parsed_values(self):
-        
-        
-        
-        
-        return(self.raw_data)
-    
-
-
-
-
+        return [{DataParticleKey.VALUE_ID: a, DataParticleKey.VALUE: b} for a, b in self.raw_data]
 
 
 class ScheduledJob(BaseEnum):
@@ -77,8 +68,6 @@ class ScheduledJob(BaseEnum):
     Instrument scheduled jobs
     """
     ACQUIRE_SAMPLE = 'pad_sample_timer_event'
-
-
 
 
 class RSNPlatformDriverState(PlatformDriverState):
