@@ -88,6 +88,15 @@ class PlatformDriver(object):
         self._construct_fsm()
         self._fsm.start(PlatformDriverState.UNCONFIGURED)
 
+    def get_cached_config(self):
+        return {}
+
+    def get_init_params(self):
+        return {}
+
+    def set_init_params(self):
+        pass
+
     def get_resource_capabilities(self, current_state=True):
         """
         """
@@ -426,10 +435,9 @@ class PlatformDriver(object):
     # UNCONFIGURED event handlers.
     ##############################################################
 
-    def _handler_unconfigured_configure(self, *args, **kwargs):
+    def _handler_unconfigured_configure(self, driver_config, *args, **kwargs):
         """
         """
-        driver_config = kwargs.get('driver_config', None)
         if driver_config is None:
             raise InstrumentException('configure: missing driver_config argument')
 
