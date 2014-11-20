@@ -130,12 +130,12 @@ class PlatformDriver(object):
             self._send_event(event)
 
     def get_cached_config(self):
-        return self._resource_schema
+        return {}
 
     def get_init_params(self):
         return {}
 
-    def set_init_params(self):
+    def set_init_params(self, *args, **kwargs):
         pass
 
     def get_resource_capabilities(self, current_state=True):
