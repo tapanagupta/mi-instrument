@@ -488,6 +488,11 @@ class RSNPlatformDriver(PlatformDriver):
         return 1
 
 
+    def get_attribute_values(self, attrs):
+        """Simple wrapper method for compatibility.
+        """
+        return self.get_attribute_values_from_oms(attrs)
+
 
     def get_attribute_values_from_oms(self,attrs):
         """
