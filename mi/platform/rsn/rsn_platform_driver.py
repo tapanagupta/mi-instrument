@@ -383,6 +383,7 @@ class RSNPlatformDriver(PlatformDriver):
  
         return 1
 
+
     def get_nms_eng_data(self):
         
         log.debug("%r: get_nms_eng_data...", self._platform_id)
@@ -528,6 +529,7 @@ class RSNPlatformDriver(PlatformDriver):
 
         new_attrs = {}
 
+
         for attr_id, attr_vals in attrs.iteritems():
 
             new_list = list();
@@ -549,8 +551,8 @@ class RSNPlatformDriver(PlatformDriver):
         #convert back to ION parameter name and scale from OMS to ION            
         for key, v in attrs:
             scaleFactor = stream[key]['scale_factor']
-            if v == 'none':
-                attrs_return.append((stream[key]['ion_parameter_name'], 'none'))
+            if v is None:
+                attrs_return.append((stream[key]['ion_parameter_name'], v))
             else:
                 attrs_return.append((stream[key]['ion_parameter_name'], v * scaleFactor))
 
