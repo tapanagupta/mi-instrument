@@ -350,7 +350,7 @@ class RSNPlatformDriver(PlatformDriver):
                                                               oneTimestampAttrs)  #scale the attrs and convert the names to ion
 
                 pad_particle = PlatformParticle(ionOneTimestampAttrs,
-                                                port_timestamp=ts)  #need to review what port timetamp meaning is..
+                                                preferred_timestamp=DataParticleKey.INTERNAL_TIMESTAMP)  #need to review what port timetamp meaning is..
 
                 pad_particle.set_internal_timestamp(timestamp=ts)
 
@@ -428,7 +428,7 @@ class RSNPlatformDriver(PlatformDriver):
                             if ts_in > stream[key]['lastRcvSampleTime']:
                                 stream[key]['lastRcvSampleTime'] = ts_in
             if (found_ts_match == 0):
-                newAttrList.append((key, 'none'))  #What is the correct zero fill approach?
+                newAttrList.append((key, None))  #What is the correct zero fill approach?
 
                 #        log.debug("timestamp list = =%s", newAttrList)
 
@@ -444,8 +444,8 @@ class RSNPlatformDriver(PlatformDriver):
         #convert back to ION parameter name and scale from OMS to ION            
         for key, v in attrs:
             scaleFactor = stream[key]['scale_factor']
-            if v == 'none':
-                attrs_return.append((stream[key]['ion_parameter_name'], 'none'))
+            if v is None:
+                attrs_return.append((stream[key]['ion_parameter_name'], v))
             else:
                 attrs_return.append((stream[key]['ion_parameter_name'], v * scaleFactor))
 
