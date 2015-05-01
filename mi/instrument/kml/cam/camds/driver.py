@@ -52,11 +52,16 @@ NEWLINE = '\r\n'
 DEFAULT_CMD_TIMEOUT = 20
 DEFAULT_WRITE_DELAY = 0
 
+# Time taken by the camera to 'recover' from taking a single image, in seconds
+CAMERA_RECOVERY_TIME = 30
+
 ZERO_TIME_INTERVAL = '00:00:00'
 MIN_SAMPLE_INTERVAL = 35
 RE_PATTERN = type(re.compile(""))
 
 DEFAULT_DICT_TIMEOUT = 30
+
+DEFAULT_PRESET_POSITION = 1
 
 #'NAK' reply from the instrument, indicating bad command sent to the instrument
 NAK = '\x15'
@@ -903,7 +908,7 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
         self._protocol_fsm.add_handler(ProtocolState.AUTOSAMPLE, ProtocolEvent.ACQUIRE_STATUS,
                                        self._handler_command_acquire_status)
         self._protocol_fsm.add_handler(ProtocolState.AUTOSAMPLE, ProtocolEvent.ACQUIRE_SAMPLE,
-                                       self._handler_command_acquire_sample)
+                                       self._handler_autosample_acquire_sample)
         self._protocol_fsm.add_handler(ProtocolState.AUTOSAMPLE, ProtocolEvent.LAMP_ON,
                                        self._handler_command_lamp_on)
         self._protocol_fsm.add_handler(ProtocolState.AUTOSAMPLE, ProtocolEvent.LAMP_OFF,
@@ -1030,8 +1035,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.SHUTTER_SPEED[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.SHUTTER_SPEED[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.SHUTTER_SPEED[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.CAMERA_GAIN[ParameterIndex.KEY],
@@ -1041,8 +1046,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.CAMERA_GAIN[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.CAMERA_GAIN[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.CAMERA_GAIN[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.LAMP_BRIGHTNESS[ParameterIndex.KEY],
@@ -1052,8 +1057,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.LAMP_BRIGHTNESS[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.LAMP_BRIGHTNESS[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.LAMP_BRIGHTNESS[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.FOCUS_SPEED[ParameterIndex.KEY],
@@ -1063,8 +1068,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.FOCUS_SPEED[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.FOCUS_SPEED[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.FOCUS_SPEED[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.FOCUS_POSITION[ParameterIndex.KEY],
@@ -1074,8 +1079,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.FOCUS_POSITION[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.FOCUS_POSITION[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.FOCUS_POSITION[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.ZOOM_SPEED[ParameterIndex.KEY],
@@ -1085,8 +1090,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.ZOOM_SPEED[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.ZOOM_SPEED[ParameterIndex.DESCRIPTION],
-                             direct_access=True,
-                             startup_param=True,
+                             direct_access=False,
+                             startup_param=False,
                              default_value=Parameter.ZOOM_SPEED[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.IRIS_POSITION[ParameterIndex.KEY],
@@ -1096,8 +1101,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.IRIS_POSITION[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.IRIS_POSITION[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.IRIS_POSITION[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.ZOOM_POSITION[ParameterIndex.KEY],
@@ -1107,8 +1112,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.ZOOM_POSITION[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.ZOOM_POSITION[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.ZOOM_POSITION[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.PAN_SPEED[ParameterIndex.KEY],
@@ -1118,8 +1123,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.PAN_SPEED[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.PAN_SPEED[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.PAN_SPEED[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.TILT_SPEED[ParameterIndex.KEY],
@@ -1129,8 +1134,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.TILT_SPEED[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.TILT_SPEED[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.TILT_SPEED[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.SOFT_END_STOPS[ParameterIndex.KEY],
@@ -1140,8 +1145,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.SOFT_END_STOPS[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.SOFT_END_STOPS[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.SOFT_END_STOPS[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.PAN_POSITION[ParameterIndex.KEY],
@@ -1151,8 +1156,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING, # meta data
                              display_name=Parameter.PAN_POSITION[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.PAN_POSITION[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.PAN_POSITION[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.TILT_POSITION[ParameterIndex.KEY],
@@ -1162,8 +1167,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                              type=ParameterDictType.STRING,
                              display_name=Parameter.TILT_POSITION[ParameterIndex.DISPLAY_NAME],
                              value_description=Parameter.TILT_POSITION[ParameterIndex.DESCRIPTION],
-                             startup_param=True,
-                             direct_access=True,
+                             startup_param=False,
+                             direct_access=False,
                              default_value=Parameter.TILT_POSITION[ParameterIndex.D_DEFAULT])
 
         self._param_dict.add(Parameter.SAMPLE_INTERVAL[ParameterIndex.KEY],
@@ -1373,6 +1378,8 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
     def _update_metadata_params(self, *args, **kwargs):
         """
         Update parameters specific to the camds_image_metadata particle.
+        Also get the frame rate here, as it's needed to calculate how
+        long the driver will sleep after capture.
         """
 
         error = None
@@ -1393,6 +1400,7 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
                                                  Parameter.FOCUS_POSITION[ParameterIndex.KEY],
                                                  Parameter.ZOOM_POSITION[ParameterIndex.KEY],
                                                  Parameter.IRIS_POSITION[ParameterIndex.KEY],
+                                                 Parameter.FRAME_RATE[ParameterIndex.KEY],
                                                  # TODO: CAMERA_GAIN needs to be in this list
                                                  # waiting to sort out instrument issues regarding this parameter
                                                  #Parameter.CAMERA_GAIN[ParameterIndex.KEY],
@@ -1765,12 +1773,18 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
         minutes = interval[1]
         seconds = interval[2]
 
-        # enforce a minimum sample interval of 35 seconds to prevent instrument from choking
-        if hours == '00' and minutes == '00' and seconds != '00':
-            if int(seconds) < MIN_SAMPLE_INTERVAL:
-                seconds = str(MIN_SAMPLE_INTERVAL)
 
-        log.debug("Setting scheduled interval to: %s %s %s", hours, minutes, seconds)
+
+        #TODO: enforce a maximum auto capture duration per IOS
+
+
+        # enforce a minimum sample interval of 35 seconds to prevent instrument from choking
+        if param == Parameter.SAMPLE_INTERVAL[ParameterIndex.KEY]:
+            if hours == '00' and minutes == '00' and seconds != '00':
+                if int(seconds) < MIN_SAMPLE_INTERVAL:
+                    seconds = str(MIN_SAMPLE_INTERVAL)
+
+        log.debug("Setting scheduled interval for %s to: %s %s %s", param, hours, minutes, seconds)
 
         if hours == '00' and minutes == '00' and seconds == '00':
             # if interval is all zeroed, then stop scheduling jobs
@@ -1849,14 +1863,16 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
         # first stop scheduled sampling
         self.stop_scheduled_job(ScheduledJob.SAMPLE)
 
-        # start scheduled event for Sampling only if the interval is not "00:00:00
-        sample_interval = self._param_dict.get(Parameter.SAMPLE_INTERVAL[ParameterIndex.KEY])
+        capture_duration = self._param_dict.get(Parameter.AUTO_CAPTURE_DURATION[ParameterIndex.KEY])
 
-        log.debug("Sample Interval is %s" % sample_interval)
-
-        if sample_interval != ZERO_TIME_INTERVAL:
+        # If the capture duration is set to 0, schedule an event to take a snapshot at the sample interval,
+        # Otherwise schedule an event to capture a series of images for the capture duration, at the sample interval
+        if capture_duration == ZERO_TIME_INTERVAL:
             self.start_scheduled_job(Parameter.SAMPLE_INTERVAL[ParameterIndex.KEY], ScheduledJob.SAMPLE,
                                      ProtocolEvent.ACQUIRE_SAMPLE)
+        else:
+            self.start_scheduled_job(Parameter.SAMPLE_INTERVAL[ParameterIndex.KEY], ScheduledJob.SAMPLE,
+                                     ProtocolEvent.EXECUTE_AUTO_CAPTURE)
 
         next_state = ProtocolState.AUTOSAMPLE
         next_agent_state = ResourceAgentState.STREAMING
@@ -1987,12 +2003,11 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
 
         kwargs['timeout'] = 2
 
-        # Execute the following commands
-        #  GET_DISK_USAGE = 'GC'
-        #  HEALTH_REQUEST  = 'HS'
         pd = self._param_dict.get_all()
         result = []
-        preset_number = 1
+
+        #set default preset position
+        preset_number = DEFAULT_PRESET_POSITION
 
         for key, value in pd.iteritems():
             if key == Parameter.PRESET_NUMBER[ParameterIndex.KEY]:
@@ -2009,6 +2024,9 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
         next_state = None
 
         kwargs['timeout'] = 2
+
+        # First, go to the user defined preset position
+        self._handler_command_goto_preset()
 
         # Before performing capture, update parameters
         self._update_metadata_params()
@@ -2032,7 +2050,28 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
 
         self.stop_scheduled_job(ScheduledJob.STOP_CAPTURE)
 
-        self._do_cmd_resp(InstrumentCmds.STOP_CAPTURE, *args, **kwargs)\
+        self._do_cmd_resp(InstrumentCmds.STOP_CAPTURE, *args, **kwargs)
+
+        # driver won't accept any commands after we stop capture, so sleep for a while.
+        # Assuming ~ 30 s recovery time per image, multiply capture duration in seconds
+        # by frame_rate*30 to get sleep time in seconds
+
+        # first get the capture duration in seconds...
+        capture_duration = self._param_dict.get(Parameter.AUTO_CAPTURE_DURATION[ParameterIndex.KEY])
+        interval = capture_duration.split(':')
+        hours = int(interval[0])
+        minutes = int(interval[1])
+        seconds = int(interval[2])
+        duration_seconds = hours*3600 + minutes*60 + seconds
+
+        frame_rate = int(self._param_dict.get(Parameter.FRAME_RATE[ParameterIndex.KEY]))
+
+        sleep_time = duration_seconds * frame_rate * CAMERA_RECOVERY_TIME
+        time.sleep(sleep_time)
+
+        # return camera back to default position
+        log.debug("waking up...time to return camera to default position")
+        self._do_cmd_resp(InstrumentCmds.GO_TO_PRESET, DEFAULT_PRESET_POSITION, *args, **kwargs)
 
     def _handler_command_stop_forward (self, *args, **kwargs):
         """
@@ -2053,15 +2092,19 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
 
         kwargs['timeout'] = 2
 
-        # Execute the following commands
-        #  GET_DISK_USAGE = 'GC'
-        #  HEALTH_REQUEST  = 'HS'
         pd = self._param_dict.get_all()
 
-        preset_number = 1
-        for key, value in pd.items():
-            if key == Parameter.PRESET_NUMBER[ParameterIndex.KEY]:
-                preset_number = value
+        #set default preset position
+        preset_number = DEFAULT_PRESET_POSITION
+
+        preset_key = Parameter.PRESET_NUMBER[ParameterIndex.KEY]
+
+        # Check if the user set a preset position, if so, make the camera go to that position
+        if preset_key in self._param_dict:
+            preset_number = self._param_dict.get(preset_key)
+            log.info("Retrieved preset no. from param dict: %s" % preset_number)
+
+        #TODO: remove above log after testing
 
         self._do_cmd_resp(InstrumentCmds.GO_TO_PRESET, preset_number, *args, **kwargs)
 
@@ -2132,6 +2175,36 @@ class CAMDSProtocol(CommandResponseInstrumentProtocol):
         """
         Exit autosample state.
         """
+
+    def _handler_autosample_acquire_sample(self, *args, **kwargs):
+        """
+        Acquire Sample
+        """
+        log.debug("IN _handler_autosample_acquire_sample")
+        next_state = None
+
+        kwargs['timeout'] = 30
+
+        # First, go to the user defined preset position
+        self._handler_command_goto_preset()
+
+        # Before taking a snapshot, update parameters
+        self._update_metadata_params()
+
+        log.debug("Acquire Sample: about to take a snapshot")
+
+        self._do_cmd_resp(InstrumentCmds.TAKE_SNAPSHOT, *args, **kwargs)
+
+        log.debug("Acquire Sample: Captured snapshot!")
+
+        #Camera needs time to recover after taking a snapshot
+        time.sleep(CAMERA_RECOVERY_TIME)
+
+        # return camera back to default position
+        log.debug("waking up...time to return camera to default position")
+        self._do_cmd_resp(InstrumentCmds.GO_TO_PRESET, DEFAULT_PRESET_POSITION, *args, **kwargs)
+
+        return next_state, (None, None)
 
     def _handler_autosample_stop_autosample(self, *args, **kwargs):
         """
